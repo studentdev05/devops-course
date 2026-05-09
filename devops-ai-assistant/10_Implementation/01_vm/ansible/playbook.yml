@@ -65,6 +65,7 @@
         repo: "{{ app_repo }}"
         dest: "{{ app_dir }}"
         version: main
+        force: yes
       become_user: "{{ app_user }}"
 
     # Створення локального файла .env з портом і паролем БД
@@ -125,8 +126,68 @@
       args:
         chdir: "{{ app_dir }}"
 
+    # Надання права запуску monitor.sh після клонування репозиторію
+    - name: Налаштувати права на скрипт моніторингу
+      file:
+        path: "{{ app_dir }}/monitor.sh"
+        state: file
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: "0755"
+
+    # Створення monitor.log, щоб training міг записувати історію перевірок
+    - name: Переконатися, що лог-файл моніторингу існує
+      file:
+        path: "{{ app_dir }}/monitor.log"
+        state: touch
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: "0644"
+
+    # Копіювання monitor.service з клонованого репозиторію до systemd
+    - name: Скопіювати unit-файл monitor.service
+      copy:
+        src: "{{ app_dir }}/monitor.service"
+        dest: /etc/systemd/system/monitor.service
+        owner: root
+        group: root
+        mode: "0644"
+        remote_src: yes
+      notify:
+        - Reload systemd
+
+    # Копіювання monitor.timer з клонованого репозиторію до systemd
+    - name: Скопіювати unit-файл monitor.timer
+      copy:
+        src: "{{ app_dir }}/monitor.timer"
+        dest: /etc/systemd/system/monitor.timer
+        owner: root
+        group: root
+        mode: "0644"
+        remote_src: yes
+      notify:
+        - Reload systemd
+
+    # Копіювання конфігурації logrotate для monitor.log
+    - name: Скопіювати конфігурацію logrotate для моніторингу
+      copy:
+        src: "{{ app_dir }}/monitor-logrotate"
+        dest: /etc/logrotate.d/monitor
+        owner: root
+        group: root
+        mode: "0644"
+        remote_src: yes
+
+    # Увімкнення timer, який запускає monitor.service щохвилини
+    - name: Активувати monitor.timer
+      systemd:
+        name: monitor.timer
+        enabled: yes
+        state: started
+        daemon_reload: yes
+
   handlers:
-    # Перечитування конфігурації systemd після оновлення unit-файла
+    # Перечитування конфігурації systemd після оновлення unit-файлів
     - name: Reload systemd
       systemd:
         daemon_reload: yes
